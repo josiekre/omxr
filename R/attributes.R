@@ -22,6 +22,28 @@ get_omx_attr <- function( file ) {
   RootAttr
 }
 
+#' Function to write matrix attribute
+#'
+#' @param file Full path name of the OMX file to store the matrix in. If this is
+#'   a new matrix file, see \link{create_omx}.
+#' @param name Name of the matrix in the OMX object.
+#' @param attr_name Name of the attribute.
+#' @param value Attribute value
+#'
+#' @import rhdf5
+#'
+#' @export
+write_matrix_attr <- function( file, name, attr_name, value) {
+    H5File <- rhdf5::H5Fopen(file)
+    H5Group <- rhdf5::rH5Gopen( H5File, "data" )
+    H5Data <- rhdf5::H5Dopen( H5Group, name )
+    rhdf5::h5writeAttribute(value, H5Data, attr_name)
+
+    #Close everything up before exiting
+    rhdf5::H5Dclose( H5Data )
+    rhdf5::H5Gclose( H5Group )
+    rhdf5::H5Fclose( H5File )
+}
 
 
 #' List the contents of an OMX file
@@ -29,7 +51,7 @@ get_omx_attr <- function( file ) {
 #' @param file The path to the OMX file.
 #'
 #' @return A list with 5 elements:
-#' \description{
+#' \describe{
 #'   \item{Version}{the OMX version number}
 #'   \item{Rows}{The number of rows in the matrix.}
 #'   \item{Columns}{The number of columns in the matrix.}
@@ -43,7 +65,7 @@ get_omx_attr <- function( file ) {
 #' @import rhdf5
 list_omx <- function( file ) {
   #Get the version and shape information
-	RootAttr <- getRootAttrOMX( file )
+	RootAttr <- get_omx_attr( file )
 	Version <- RootAttr$VERSION
 	Shape <- RootAttr$SHAPE
   #Use the h5ls function to read the contents of the file
@@ -58,7 +80,7 @@ list_omx <- function( file ) {
   MatAttr <- list()
 
   for( i in 1:length(Names) ) {
-    Attr <- list()
+		Attr <- list(type="matrix")
     H5Data <- H5Dopen( H5Group, Names[i] )
     if(H5Aexists(H5Data, "NA")) {
       H5Attr <- rhdf5::H5Aopen( H5Data, "NA" )
@@ -87,34 +109,39 @@ list_omx <- function( file ) {
   Names <- LookupContents$name
   Types <- LookupContents$dclass
   LookupAttr <- list()
-  for( i in 1:length(Names) ) {
-    Attr <- list()
-    H5Data <- rhdf5::H5Dopen( H5Group, Names[i] )
-    if( rhdf5::H5Aexists( H5Data, "DIM" ) ) {
-      H5Attr <- rhdf5::H5Aopen( H5Data, "DIM" )
-      Attr$lookupdim <- rhdf5::H5Aread( H5Attr )
-      rhdf5::H5Aclose( H5Attr )
-    } else {
-      Attr$lookupdim <- ""
-    }
-    if( rhdf5::H5Aexists( H5Data, "Description" ) ) {
-      H5Attr <- rhdf5::H5Aopen( H5Data, "Description" )
-      Attr$description <- rhdf5::H5Aread( H5Attr )
-      rhdf5::H5Aclose( H5Attr )
-    } else {
-      Attr$description <- ""
-    }
 
-    LookupAttr[[Names[i]]] <- Attr
-    rhdf5::H5Dclose( H5Data )
-    rm( Attr )
-  }
+	if(length(Names)>0){
+	  for( i in 1:length(Names) ) {
+	    Attr <- list()
+	    H5Data <- rhdf5::H5Dopen( H5Group, Names[i] )
 
-  rhdf5::H5Gclose( H5Group )
-  rhdf5::H5Fclose( H5File )
+	    if( rhdf5::H5Aexists( H5Data, "DIM" ) ) {
+	      H5Attr <- rhdf5::H5Aopen( H5Data, "DIM" )
+	      Attr$lookupdim <- rhdf5::H5Aread( H5Attr )
+	      rhdf5::H5Aclose( H5Attr )
+	    } else {
+	      Attr$lookupdim <- ""
+	    }
 
-  LookupAttr <- do.call( rbind, lapply( LookupAttr, function(x) data.frame(x) ) )
-  rm( Names, Types )
+	    if( rhdf5::H5Aexists( H5Data, "Description" ) ) {
+	      H5Attr <- rhdf5::H5Aopen( H5Data, "Description" )
+	      Attr$description <- rhdf5::H5Aread( H5Attr )
+	      rhdf5::H5Aclose( H5Attr )
+	    } else {
+	      Attr$description <- ""
+	    }
+
+	    LookupAttr[[Names[i]]] <- Attr
+	    rhdf5::H5Dclose( H5Data )
+	    rm( Attr )
+		}
+
+	  rhdf5::H5Gclose( H5Group )
+	  rhdf5::H5Fclose( H5File )
+
+	  LookupAttr <- do.call( rbind, lapply( LookupAttr, function(x) data.frame(x) ) )
+	  rm( Names, Types )
+	}
 
   #Combine the results into a list
   if(length(MatAttr)>0) {
@@ -122,7 +149,12 @@ list_omx <- function( file ) {
   } else {
     MatInfo <- MatrixContents[,c("name","dclass","dim")]
   }
-  LookupInfo <- cbind( LookupContents[,c("name","dclass","dim")], LookupAttr )
+
+	if(length(LookupAttr)>0) {
+    LookupInfo <- cbind( LookupContents[,c("name","dclass","dim")], LookupAttr )
+  } else {
+    LookupInfo <- LookupContents[,c("name","dclass","dim")]
+  }
 
   list(
     OMXVersion=Version,
@@ -130,4 +162,3 @@ list_omx <- function( file ) {
     Matrices=MatInfo, Lookups=LookupInfo
   )
 }
-
